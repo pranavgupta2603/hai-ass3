@@ -113,6 +113,36 @@ def find(events, kind, trial_id=None):
                  (trial_id is None or e['payload'].get('trial_id') == str(trial_id))), None)
 
 
+def condition_events(events, condition):
+    """Read both legacy single-condition records and new condition-scoped records.
+
+    Legacy attention events lack a condition; their original session supplies it.
+    This is a read-time interpretation, never a spreadsheet migration.
+    """
+    unique = list(first_events(events).values())
+    legacy_session = next((e for e in unique if e['kind'] == 'session' and
+                           e['event_id'] == f"{VERSION}:{e['participant_id']}:session"), None)
+    legacy_condition = legacy_session['payload']['condition'] if legacy_session else None
+    selected = []
+    for item in unique:
+        assigned = item['payload'].get('condition')
+        if assigned is None and legacy_condition:
+            prefix = f"{VERSION}:{item['participant_id']}:{item['kind']}"
+            if item['event_id'] == prefix or item['event_id'].startswith(prefix + ':'):
+                assigned = legacy_condition
+        if assigned == condition:
+            selected.append(item)
+    return selected
+
+
+def condition_event(pid, condition, kind, payload, suffix='', legacy=False):
+    """Keep old IDs when resuming old sessions; scope all new sessions by condition."""
+    item = event(pid, kind, {**payload, 'condition': condition}, suffix)
+    if not legacy:
+        item['event_id'] = f'{VERSION}:{pid}:{condition}:{kind}' + (f':{suffix}' if suffix else '')
+    return item
+
+
 def ai_snapshot(row):
     return {k: row[k] for k in ('ai_prediction', 'ai_scam_probability', 'ai_confidence',
                                'ai_key_words', 'ai_signals')}

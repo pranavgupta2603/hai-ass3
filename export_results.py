@@ -6,7 +6,7 @@ import statistics
 import tomllib
 from pathlib import Path
 from storage import SheetsStore, SQLiteStore
-from study import first_events, find
+from study import first_events, find, condition_events
 
 
 def csv_file(path, rows, fields):
@@ -25,29 +25,31 @@ def export(events, output):
     events = list(first_events(events).values())
     participants, trials, questionnaires = [], [], []
     for pid in sorted({e['participant_id'] for e in events}):
-        own = [e for e in events if e['participant_id'] == pid]
-        session = find(own, 'session')
-        if not session:
-            continue
-        payload = session['payload']
-        answers = [e for e in own if e['kind'] == 'response']
-        questionnaire = find(own, 'questionnaire')
-        participants.append({'participant_id': pid, **payload,
-                             'trial_ids': ','.join(payload['trial_ids']),
-                             'attention_attempts': sum(e['kind'] == 'attention_attempt' for e in own),
-                             'attention_passed': bool(find(own, 'attention_pass')),
-                             'responses': len(answers), 'completed': bool(questionnaire),
-                             'accuracy': statistics.mean(e['payload']['human_correct'] for e in answers) if answers else '',
-                             'mean_seconds': statistics.mean(e['payload']['elapsed_seconds'] for e in answers) if answers else '',
-                             'mean_confidence': statistics.mean(e['payload']['confidence'] for e in answers) if answers else ''})
-        for answer in answers:
-            row = {'participant_id': pid, **answer['payload']}
-            row['ai_shown'] = json.dumps(row['ai_shown'])
-            trials.append(row)
-        if questionnaire:
-            questionnaires.append({'participant_id': pid, **questionnaire['payload']})
+        person_events = [e for e in events if e['participant_id'] == pid]
+        for condition in ('baseline', 'assisted'):
+            own = condition_events(person_events, condition)
+            session = find(own, 'session')
+            if not session:
+                continue
+            payload = session['payload']
+            answers = [e for e in own if e['kind'] == 'response']
+            questionnaire = find(own, 'questionnaire')
+            participants.append({'participant_id': pid, **payload,
+                                 'trial_ids': ','.join(payload['trial_ids']),
+                                 'attention_attempts': sum(e['kind'] == 'attention_attempt' for e in own),
+                                 'attention_passed': bool(find(own, 'attention_pass')),
+                                 'responses': len(answers), 'completed': bool(questionnaire),
+                                 'accuracy': statistics.mean(e['payload']['human_correct'] for e in answers) if answers else '',
+                                 'mean_seconds': statistics.mean(e['payload']['elapsed_seconds'] for e in answers) if answers else '',
+                                 'mean_confidence': statistics.mean(e['payload']['confidence'] for e in answers) if answers else ''})
+            for answer in answers:
+                row = {'participant_id': pid, **answer['payload']}
+                row['ai_shown'] = json.dumps(row['ai_shown'])
+                trials.append(row)
+            if questionnaire:
+                questionnaires.append({'participant_id': pid, **questionnaire['payload']})
     csv_file(output / 'participants.csv', participants,
-             ['participant_id', 'condition', 'assignment_method', 'version', 'dataset_sha256', 'started_at', 'trial_ids',
+             ['participant_id', 'condition', 'assignment_method', 'condition_order', 'version', 'dataset_sha256', 'started_at', 'trial_ids',
               'attention_attempts', 'attention_passed', 'responses', 'completed', 'accuracy', 'mean_seconds', 'mean_confidence'])
     csv_file(output / 'trials.csv', trials,
              ['participant_id', 'trial_id', 'condition', 'position', 'answer', 'confidence', 'true_label',
@@ -56,12 +58,13 @@ def export(events, output):
     csv_file(output / 'questionnaires.csv', questionnaires,
              ['participant_id', 'condition', 'effort', 'completed_at', 'total_elapsed_seconds'])
     summary = {'note': 'Descriptive summaries of completed participants only; no significance or causal claims. '
-                        'AI accuracy is weighted by actual trial exposures, not unique posting IDs.', 'conditions': {}}
+                        'AI accuracy is weighted by actual trial exposures, not unique posting IDs. '
+                        'The same participant can appear in both conditions; account for pairing and order effects.', 'conditions': {}}
     for condition in ('baseline', 'assisted'):
         people = [p for p in participants if p['completed'] and p['condition'] == condition]
         ids = {p['participant_id'] for p in people}
-        observed = [r for r in trials if r['participant_id'] in ids]
-        q = [r for r in questionnaires if r['participant_id'] in ids]
+        observed = [r for r in trials if r['participant_id'] in ids and r['condition'] == condition]
+        q = [r for r in questionnaires if r['participant_id'] in ids and r['condition'] == condition]
         summary['conditions'][condition] = {
             'completed_participants': len(people), 'trial_responses': len(observed),
             'mean_participant_accuracy': statistics.mean(p['accuracy'] for p in people) if people else None,

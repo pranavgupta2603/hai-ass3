@@ -26,7 +26,7 @@ Condition URLs (both require sign-in and save):
 - `http://localhost:8501/?condition=baseline`
 - `http://localhost:8501/?condition=assisted`
 
-Use these suffixes on the deployed app for condition-specific collection. The base URL randomly assigns a condition. Existing participants always resume their saved condition; changing links does not reassign them. Old `?preview=baseline` and `?preview=assisted` links are compatibility aliases that now require sign-in and save too. Do not use any hosted link for disposable testing: use explicit local mode or a separate pilot Sheet.
+Use these suffixes on the deployed app for condition-specific collection. The base URL randomly assigns a condition. Each condition resumes its own saved progress under the same uniqname. Participants can complete both; changing links opens the selected condition without resetting the other. Old `?preview=baseline` and `?preview=assisted` links are compatibility aliases that now require sign-in and save too. Do not use any hosted link for disposable testing: use explicit local mode or a separate pilot Sheet.
 
 ## Configure the private Google Sheet
 
@@ -53,12 +53,12 @@ The source package supports deployment using these steps. Live hosting status is
 ## Study protocol
 
 - Participants enter their own UMich uniqname, acknowledge recorded data, read instructions, and pass an easy instruction question. Incorrect attempts receive corrective feedback and may be retried.
-- A secret-seeded pseudorandom assignment fixes the condition and five trial IDs for each participant. Conditions are approximately balanced in expectation, not forcibly balanced in a small class. Trial selection is stratified: 2/3 or 3/2 real/scam, shuffled. The same procedure is used in both conditions.
-- Return with the same uniqname to resume. Uniqname is an identifier, **not authentication**; this has the same trust assumption as the Ass1 class interface. Do not treat this as suitable for sensitive or adversarial studies.
+- A secret-seeded pseudorandom assignment fixes five trial IDs per participant and condition. Conditions are approximately balanced in expectation, not forcibly balanced in a small class. Trial selection is stratified: 2/3 or 3/2 real/scam, shuffled. The same procedure is used in both conditions.
+- Return with the same uniqname and condition link to resume that condition. Uniqname is an identifier, **not authentication**; this has the same trust assumption as the Ass1 class interface. Do not treat this as suitable for sensitive or adversarial studies.
 - Both conditions show identical posting fields and logo-presence information. AI assistance appears automatically below the posting in the assisted condition. All details are visible without opening task-content expanders.
 - Each response requires Real/Scam and confidence 1–5; neither is preselected. Responses are locked after submission. There is no answer feedback during the study.
 - A final effort rating (1–7) completes the study. The completion page appears only after storage confirms the final event.
-- All public routes collect real responses. A condition link sets the first assignment, while the base URL randomizes it. Existing saved assignments cannot be overridden by query parameters. The assignment method is exported; use the base URL for the randomized experiment.
+- All public routes collect real responses. A condition link sets the first assignment, while the base URL randomizes it. Each condition has its own saved assignment. A participant can complete both conditions using the same uniqname. The assignment method is exported; use the base URL for the randomized experiment.
 
 ## Timing and pilot
 
@@ -77,7 +77,7 @@ python export_results.py --source sheets --output exports/study
 
 Outputs:
 
-- `participants.csv`: assignments, instruction-check attempts, progress, completion, and participant-level means.
+- `participants.csv`: assignments, instruction-check attempts, progress, completion, and participant-and-condition means (up to two rows per uniqname).
 - `trials.csv`: judgments, confidence, elapsed time, truth, AI baseline correctness and exact AI content shown (null in baseline).
 - `questionnaires.csv`: linked effort responses, completion timestamps, and total duration.
 - `summary.json`: descriptive condition summaries for completed participants, including the AI-only accuracy on trials they actually received.
@@ -108,3 +108,11 @@ The supplied spreadsheet already contained `annotations` and `ass3` tabs. Those 
 ## Resetting pilot data
 
 Prefer removing only data rows (row 2 onward), keeping the header row in `ass3_events`. If the whole worksheet is cleared, the app now automatically restores the five headers before sign-in or saving. It only does this when the worksheet is completely empty; it refuses to overwrite unrecognized headers above existing data. Clearing rows removes saved sessions and responses; this recovery restores the schema, not deleted participant data.
+
+## Completing both conditions
+
+The same uniqname may complete baseline and assisted independently. Use the condition URLs above, the sidebar switch button, or the button on the completion page. Each run has its own instruction check, five answers, confidence/timing records and final effort rating. The second condition selects five different postings, excluding the first condition's assigned trials.
+
+No spreadsheet migration, column change or rewriting of existing data is required. Legacy records are interpreted as belonging to their original session's condition; unfinished legacy runs keep using their original event IDs. New runs use condition-scoped event IDs and include the condition in every event payload. The participant ID remains the original uniqname. Exports group by participant AND condition and retain both completion records. Only new submissions append rows.
+
+People who complete both contribute paired observations; consider condition order and learning effects when interpreting results. New runs record condition order without rewriting earlier runs.

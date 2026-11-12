@@ -6,7 +6,7 @@ Does access to the Assignment 2 classifier improve classmates' ability to distin
 The hypothesis from Assignment 2 is human–AI joint performance > AI-only > human-only. This is a hypothesis, not a measured result. The original AI scored 175/200 (87.5%) on the full balanced bank, with 19 missed scams and 6 false alarms. Comparisons in this study also compute AI correctness on each participant's actual five trials.
 
 ## Conditions and workflow
-A between-participants study assigns each uniqname to baseline or assisted using a secret-seeded pseudorandom procedure. Randomization is persistent and independent of labels sampled. Each person receives five unique trials, with either two or three scams and the complementary number of real postings. The sample is shuffled and differs across participants. The balanced trial bank intentionally differs from real-world scam prevalence.
+The main link initially assigns a condition using a secret-seeded pseudorandom procedure. Participants may complete both conditions under the same uniqname, with separate saved progress and disjoint trial samples. Existing one-condition records remain valid; record whether each participant completed one or both conditions when analyzing results. Randomization is persistent and independent of labels sampled. Each person receives five unique trials, with either two or three scams and the complementary number of real postings. The sample is shuffled and differs across participants. The balanced trial bank intentionally differs from real-world scam prevalence.
 
 Workflow: identify participant → acknowledge data collection → instructions → easy attention check → five judgments/confidence ratings → effort question → confirmed completion.
 
@@ -39,3 +39,5 @@ The check asks what participants will decide: whether a posting is real or a sca
 
 ## Before launch
 Configure a new private Sheet, deploy the app, verify real backend permissions using a pilot Sheet, and complete timed human pilots in both conditions. Use the main URL for randomized assignment. Explicit condition URLs and legacy preview URLs both require sign-in and save data; condition-linked assignment is recorded separately. Use local mode or a separate pilot Sheet for grading demonstrations. Do not mix pilot records into the final study Sheet. Keep the dataset, protocol, salt and version unchanged once collection starts.
+
+Participants who complete both conditions contribute paired observations. Condition order and learning effects must be considered; completing both does not constitute two independent participants. Existing spreadsheet rows are read compatibly, never migrated or reset.

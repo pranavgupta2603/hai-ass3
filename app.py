@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 from storage import SheetsStore, SQLiteStore
 from study import (VERSION, N_TRIALS, assignment, ai_snapshot, clean, event, find,
-                   load_dataset, now, participant_id, response_payload, seconds)
+                   load_dataset, now, participant_id, response_payload, seconds, condition_events, condition_event)
 
 BASE = Path(__file__).resolve().parent
 st.set_page_config(page_title='Job Posting Study', page_icon='🔎', layout='centered')
@@ -84,6 +84,7 @@ else:
     st.stop()
 
 if 'pid' not in st.session_state:
+    st.info('You can complete both baseline and AI-assisted studies using the same uniqname. Each saves its own progress.')
     if requested_condition:
         st.caption('Baseline study' if requested_condition == 'baseline' else 'AI-assisted study')
     st.write('Read five job postings and decide whether each is real or a scam. '
@@ -104,26 +105,53 @@ if 'pid' not in st.session_state:
         if not acknowledged:
             st.error('Please confirm that you understand what will be recorded.')
             st.stop()
-        # Save assignment before entering the task, even if the browser is refreshed.
-        new_assignment = assignment(pid, bank, salt, digest, condition=requested_condition or None)
-        new_assignment['assignment_method'] = 'condition_link' if requested_condition else 'random'
-        safe(lambda: store.put(event(pid, 'session', new_assignment)))
         st.session_state.pid = pid
+        st.session_state.active_condition = requested_condition or None
         st.rerun()
     st.stop()
 
 pid = st.session_state.pid
-events = safe(lambda: store.read(pid))
+all_events = safe(lambda: store.read(pid))
+first_session = find(all_events, 'session')
+selected_condition = (requested_condition or st.session_state.get('active_condition') or
+                      (first_session['payload']['condition'] if first_session else
+                       assignment(pid, bank, salt, digest)['condition']))
+st.session_state.active_condition = selected_condition
+if st.session_state.get('view_condition') != selected_condition:
+    # Widget values are provisional; persisted responses stay in their own condition.
+    for key in list(st.session_state):
+        if key in ('attention_answer', 'effort') or key.startswith(('answer_', 'confidence_')):
+            del st.session_state[key]
+    st.session_state.view_condition = selected_condition
+
+events = condition_events(all_events, selected_condition)
 session_event = find(events, 'session')
 if not session_event:
-    st.error('No saved assignment was found. Please sign in again.')
-    if st.button('Return to sign-in'):
-        del st.session_state.pid
-        st.rerun()
-    st.stop()
+    prior_sessions = [e for e in all_events if e['kind'] == 'session']
+    prior_trials = {t for e in prior_sessions for t in e['payload']['trial_ids']}
+    available_bank = {t: row for t, row in bank.items() if t not in prior_trials}
+    seed_id = f'{pid}:{selected_condition}' if prior_sessions else pid
+    new_assignment = assignment(seed_id, available_bank, salt, digest, condition=selected_condition)
+    new_assignment['assignment_method'] = 'condition_link' if requested_condition else 'random'
+    new_assignment['condition_order'] = len(prior_sessions) + 1
+    session_event = safe(lambda: store.put(condition_event(pid, selected_condition, 'session', new_assignment)))
+    events.append(session_event)
 session = session_event['payload']
-if requested_condition and requested_condition != session['condition']:
-    st.info('Your saved study assignment is being resumed. Opening another condition link does not change it.')
+legacy_session = session_event['event_id'] == f'{VERSION}:{pid}:session'
+
+
+def write_event(kind, payload, suffix=''):
+    return store.put(condition_event(pid, selected_condition, kind, payload, suffix, legacy=legacy_session))
+
+
+def switch_condition():
+    other = 'assisted' if selected_condition == 'baseline' else 'baseline'
+    st.query_params['condition'] = other
+    if 'preview' in st.query_params:
+        del st.query_params['preview']
+    st.session_state.active_condition = other
+    st.rerun()
+
 if session['dataset_sha256'] != digest or session['version'] != VERSION:
     st.error('The study materials changed after you started. Please contact the organizer.')
     st.stop()
@@ -133,7 +161,10 @@ with st.sidebar:
     st.write(f'Signed in as **{pid}**')
     st.caption('Five postings · One final question')
     st.write('With AI assistance' if session['condition'] == 'assisted' else 'Independent judgment')
-    st.caption('Submitted responses are saved and cannot be revised. If you leave, return using the same uniqname.')
+    st.caption('Each condition saves its own progress under your uniqname. Submitted answers cannot be revised.')
+    other_label = 'AI-assisted' if selected_condition == 'baseline' else 'baseline'
+    if st.button(f'Switch to {other_label} study'):
+        switch_condition()
     if st.button('Sign out'):
         st.session_state.clear()
         st.rerun()
@@ -171,9 +202,9 @@ if not find(events, 'attention_pass'):
         else:
             attempts = sum(e['kind'] == 'attention_attempt' for e in events)
             passed = choice == 'Whether it is real or a scam'
-            safe(lambda: store.put(event(pid, 'attention_attempt', {'answer': choice, 'passed': passed}, str(attempts + 1))))
+            safe(lambda: write_event('attention_attempt', {'answer': choice, 'passed': passed}, str(attempts + 1)))
             if passed:
-                safe(lambda: store.put(event(pid, 'attention_pass', {'passed': True})))
+                safe(lambda: write_event('attention_pass', {'passed': True}))
                 st.rerun()
             else:
                 st.error('Please reread the instructions: your task is to decide whether each posting is real or a scam. Try again.')
@@ -186,7 +217,10 @@ if completed:
     st.success('Thank you — all five responses and your final rating have been saved to Google Sheets.'
                if mode == 'study' else 'Thank you — all five responses and your final rating have been saved locally.')
     st.write('You can close this page. Please avoid discussing individual postings with classmates until data collection ends.')
-    st.caption(f'Completion reference: {VERSION}-{pid}')
+    st.caption(f'Completion reference: {VERSION}-{pid}-{selected_condition}')
+    other_label = 'AI-assisted' if selected_condition == 'baseline' else 'baseline'
+    if st.button(f'Continue to {other_label} study', type='primary'):
+        switch_condition()
     st.stop()
 
 st.progress(len(answers) / N_TRIALS, text=f'{len(answers)} of {N_TRIALS} postings submitted')
@@ -203,8 +237,8 @@ if len(answers) == N_TRIALS:
             st.error('Choose an effort rating before finishing.')
         else:
             end = now()
-            safe(lambda: store.put(event(pid, 'questionnaire', {'effort': effort, 'completed_at': end,
-                 'condition': session['condition'], 'total_elapsed_seconds': seconds(session['started_at'], end)})))
+            safe(lambda: write_event('questionnaire', {'effort': effort, 'completed_at': end,
+                 'condition': session['condition'], 'total_elapsed_seconds': seconds(session['started_at'], end)}))
             st.rerun()
     st.stop()
 
@@ -212,9 +246,9 @@ trial_id = next(t for t in session['trial_ids'] if t not in answers)
 row = bank[trial_id]
 exposure = find(events, 'exposure', trial_id)
 if not exposure:
-    exposure = safe(lambda: store.put(event(pid, 'exposure', {
+    exposure = safe(lambda: write_event('exposure', {
         'trial_id': trial_id, 'condition': session['condition'],
-        'ai_shown': ai_snapshot(row) if session['condition'] == 'assisted' else None}, trial_id)))
+        'ai_shown': ai_snapshot(row) if session['condition'] == 'assisted' else None}, trial_id))
 
 st.caption(f'POSTING {len(answers) + 1} OF {N_TRIALS}')
 with st.expander('Review the instructions'):
@@ -254,5 +288,5 @@ if submitted:
         st.error('Choose both a judgment and a confidence rating before submitting.')
     else:
         payload = response_payload(session, row, exposure, answer, confidence)
-        safe(lambda: store.put(event(pid, 'response', payload, trial_id)))
+        safe(lambda: write_event('response', payload, trial_id))
         st.rerun()
