@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 import streamlit as st
-from storage import MemoryStore, SheetsStore, SQLiteStore
+from storage import SheetsStore, SQLiteStore
 from study import (VERSION, N_TRIALS, assignment, ai_snapshot, clean, event, find,
                    load_dataset, now, participant_id, response_payload, seconds)
 
@@ -55,25 +55,20 @@ try:
 except FileNotFoundError:
     config = {}
 settings = config.get('study', {})
-preview = st.query_params.get('preview', '')
-if preview not in ('', 'baseline', 'assisted'):
-    st.error('Unknown preview condition. Use ?preview=baseline or ?preview=assisted.')
+# Old preview URLs are now real condition links too: no public route bypasses saving.
+requested_condition = st.query_params.get('condition', st.query_params.get('preview', ''))
+if requested_condition not in ('', 'baseline', 'assisted'):
+    st.error('Unknown condition. Use ?condition=baseline or ?condition=assisted.')
     st.stop()
 mode = os.environ.get('ASS3_MODE', settings.get('mode', 'study'))
-context = f'{mode}:{preview}'
+# Invalidate the old anonymous reviewer session on upgrade. Require a real sign-in.
+context = f'persistent-entry-v2:{mode}'
 if st.session_state.get('context') != context:
     st.session_state.clear()
     st.session_state.context = context
 
 bank, digest = safe(dataset)
-if preview:
-    st.warning('REVIEWER PREVIEW · Nothing here is saved to the study. Refresh to start over.')
-    if 'preview_store' not in st.session_state:
-        st.session_state.preview_store = MemoryStore()
-    store = st.session_state.preview_store
-    salt = 'preview-only'
-    st.session_state.pid = 'reviewer'
-elif mode == 'local':
+if mode == 'local':
     st.warning('LOCAL TEST MODE · Responses are stored on this computer, not in the study Google Sheet.')
     store = local_store(os.environ.get('ASS3_DB', str(BASE / 'data' / 'local.sqlite3')))
     salt = 'local-testing-only'
@@ -81,7 +76,7 @@ elif mode == 'study':
     salt = settings.get('assignment_salt', '')
     if len(salt) < 32 or 'google_sheets' not in config:
         st.info('The study is not open yet. The organizer is configuring response storage.')
-        st.caption('Reviewer links: add ?preview=baseline or ?preview=assisted to this address.')
+        st.caption('Please return after the organizer has connected study storage.')
         st.stop()
     store = safe(lambda: sheets_store(config['google_sheets']))
 else:
@@ -89,6 +84,8 @@ else:
     st.stop()
 
 if 'pid' not in st.session_state:
+    if requested_condition:
+        st.caption('Baseline study' if requested_condition == 'baseline' else 'AI-assisted study')
     st.write('Read five job postings and decide whether each is real or a scam. '
              'Please allow about 8–9 minutes, including instructions and a short final question.')
     st.caption('We record your uniqname, answers, confidence, timing, instruction-check attempts, '
@@ -108,14 +105,14 @@ if 'pid' not in st.session_state:
             st.error('Please confirm that you understand what will be recorded.')
             st.stop()
         # Save assignment before entering the task, even if the browser is refreshed.
-        safe(lambda: store.put(event(pid, 'session', assignment(pid, bank, salt, digest))))
+        new_assignment = assignment(pid, bank, salt, digest, condition=requested_condition or None)
+        new_assignment['assignment_method'] = 'condition_link' if requested_condition else 'random'
+        safe(lambda: store.put(event(pid, 'session', new_assignment)))
         st.session_state.pid = pid
         st.rerun()
     st.stop()
 
 pid = st.session_state.pid
-if preview:
-    store.put(event(pid, 'session', assignment(pid, bank, salt, digest, condition=preview)))
 events = safe(lambda: store.read(pid))
 session_event = find(events, 'session')
 if not session_event:
@@ -125,17 +122,19 @@ if not session_event:
         st.rerun()
     st.stop()
 session = session_event['payload']
+if requested_condition and requested_condition != session['condition']:
+    st.info('Your saved study assignment is being resumed. Opening another condition link does not change it.')
 if session['dataset_sha256'] != digest or session['version'] != VERSION:
     st.error('The study materials changed after you started. Please contact the organizer.')
     st.stop()
 
 with st.sidebar:
     st.header('Your study')
-    st.write('Reviewer' if preview else f'Signed in as **{pid}**')
+    st.write(f'Signed in as **{pid}**')
     st.caption('Five postings · One final question')
     st.write('With AI assistance' if session['condition'] == 'assisted' else 'Independent judgment')
     st.caption('Submitted responses are saved and cannot be revised. If you leave, return using the same uniqname.')
-    if not preview and st.button('Sign out'):
+    if st.button('Sign out'):
         st.session_state.clear()
         st.rerun()
 
@@ -184,13 +183,14 @@ answers = {e['payload']['trial_id']: e for e in events if e['kind'] == 'response
 completed = find(events, 'questionnaire')
 if completed:
     st.progress(1.0, text='Study complete')
-    st.success('Thank you — all five responses and your final rating have been recorded.' if not preview
-               else 'Preview complete. No study data was saved.')
+    st.success('Thank you — all five responses and your final rating have been saved to Google Sheets.'
+               if mode == 'study' else 'Thank you — all five responses and your final rating have been saved locally.')
     st.write('You can close this page. Please avoid discussing individual postings with classmates until data collection ends.')
     st.caption(f'Completion reference: {VERSION}-{pid}')
     st.stop()
 
 st.progress(len(answers) / N_TRIALS, text=f'{len(answers)} of {N_TRIALS} postings submitted')
+st.caption(f"{len(answers)} responses saved to {'Google Sheets' if mode == 'study' else 'local test storage'}.")
 if len(answers) == N_TRIALS:
     st.subheader('One last question')
     with st.form('questionnaire'):

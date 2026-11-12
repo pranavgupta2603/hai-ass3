@@ -2,11 +2,11 @@
 
 Live study: https://gpranav-job-study.streamlit.app/
 
-Reviewer previews: [baseline](https://gpranav-job-study.streamlit.app/?preview=baseline) · [AI-assisted](https://gpranav-job-study.streamlit.app/?preview=assisted). Preview responses are never saved.
+Condition links: [baseline](https://gpranav-job-study.streamlit.app/?condition=baseline) · [AI-assisted](https://gpranav-job-study.streamlit.app/?condition=assisted). Both require sign-in and save responses. Old `?preview=` links now behave identically. There is no anonymous, unsaved public preview.
 
 Source: https://github.com/pranavgupta2603/hai-ass3 (public, as requested; includes the study dataset and answer labels, but no credentials or participant records).
 
-One Streamlit app implements baseline and AI-assisted conditions for the final Assignment 2 dataset. The deployed study uses a private Google Sheet; SQLite is an explicit local testing option. Reviewer previews never write to either backend.
+One Streamlit app implements baseline and AI-assisted conditions for the final Assignment 2 dataset. The deployed study uses a private Google Sheet; SQLite is an explicit local testing option. Every public entry point requires sign-in and uses the configured persistent backend.
 
 ## Run locally (Python 3.11+)
 
@@ -21,12 +21,12 @@ ASS3_MODE=local streamlit run app.py
 
 Open the printed localhost URL. Local responses go to ignored `data/local.sqlite3`. Use invented test uniqnames. Do not deploy with `ASS3_MODE=local`: hosted local files are not reliable durable storage.
 
-Reviewer URLs, available even without credentials:
+Condition URLs (both require sign-in and save):
 
-- `http://localhost:8501/?preview=baseline`
-- `http://localhost:8501/?preview=assisted`
+- `http://localhost:8501/?condition=baseline`
+- `http://localhost:8501/?condition=assisted`
 
-The same `?preview=` suffixes work on the deployed app. Previews use memory only, show a prominent banner, and reset on browser refresh. The class study URL must have **no preview parameter**.
+Use these suffixes on the deployed app for condition-specific collection. The base URL randomly assigns a condition. Existing participants always resume their saved condition; changing links does not reassign them. Old `?preview=baseline` and `?preview=assisted` links are compatibility aliases that now require sign-in and save too. Do not use any hosted link for disposable testing: use explicit local mode or a separate pilot Sheet.
 
 ## Configure the private Google Sheet
 
@@ -44,7 +44,7 @@ The sheet contains an append-only event log: `event_id`, `participant_id`, `kind
 2. In Streamlit Community Cloud, create an app from that repository, selecting `app.py` (or `Ass3/app.py` if it is a subfolder), and Python 3.11 or later.
 3. Paste the real secrets TOML into the app's **Advanced settings → Secrets**. Never put credentials into repository files. Leave `study.mode = "study"`.
 4. Deploy. Verify a complete flow against a separate pilot Google Sheet, including refresh, retry, and final questionnaire. Set the final empty study sheet before collecting classmate responses.
-5. Share the base URL with participants. Provide the two preview URLs to the instructor.
+5. Share the base URL with participants. The two condition URLs also collect real responses; use local mode or a separate pilot Sheet for demonstrations.
 
 Official instructions: https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy
 
@@ -58,7 +58,7 @@ The source package supports deployment using these steps. Live hosting status is
 - Both conditions show identical posting fields and logo-presence information. AI assistance appears automatically below the posting in the assisted condition. All details are visible without opening task-content expanders.
 - Each response requires Real/Scam and confidence 1–5; neither is preselected. Responses are locked after submission. There is no answer feedback during the study.
 - A final effort rating (1–7) completes the study. The completion page appears only after storage confirms the final event.
-- Preview data is never mixed into real collection. Query parameters cannot override a real participant's assigned condition.
+- All public routes collect real responses. A condition link sets the first assignment, while the base URL randomizes it. Existing saved assignments cannot be overridden by query parameters. The assignment method is exported; use the base URL for the randomized experiment.
 
 ## Timing and pilot
 
@@ -97,7 +97,7 @@ pip install pytest
 python -m pytest -q
 ```
 
-Tests cover condition/trial assignment, stratification, concurrent SQLite saves, Sheets uncertain-write recovery using a fake transport, preview isolation, missing production configuration, validation, failed attention check recovery, complete flows in both conditions, sign-in/resume, completion locking, and exports.
+Tests cover condition/trial assignment, stratification, concurrent SQLite saves, Sheets uncertain-write recovery using a fake transport, persistent sign-in and five saved responses through every condition link, including legacy URLs, missing production configuration, validation, failed attention check recovery, complete flows in both conditions, sign-in/resume, completion locking, and exports.
 
 See `STUDY_DESIGN.md` for the measurement rationale and assignment mapping.
 

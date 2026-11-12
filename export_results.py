@@ -47,7 +47,7 @@ def export(events, output):
         if questionnaire:
             questionnaires.append({'participant_id': pid, **questionnaire['payload']})
     csv_file(output / 'participants.csv', participants,
-             ['participant_id', 'condition', 'version', 'dataset_sha256', 'started_at', 'trial_ids',
+             ['participant_id', 'condition', 'assignment_method', 'version', 'dataset_sha256', 'started_at', 'trial_ids',
               'attention_attempts', 'attention_passed', 'responses', 'completed', 'accuracy', 'mean_seconds', 'mean_confidence'])
     csv_file(output / 'trials.csv', trials,
              ['participant_id', 'trial_id', 'condition', 'position', 'answer', 'confidence', 'true_label',

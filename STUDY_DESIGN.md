@@ -38,4 +38,4 @@ The check asks what participants will decide: whether a posting is real or a sca
 5. Assisted interface: static, saved Assignment 2 predictions and explanations, shown automatically and logged exactly.
 
 ## Before launch
-Configure a new private Sheet, deploy the app, verify real backend permissions using a pilot Sheet, and complete timed human pilots in both conditions. Use the main URL for the study and preview URLs for grading. Do not mix pilot records into the final study Sheet. Keep the dataset, protocol, salt and version unchanged once collection starts.
+Configure a new private Sheet, deploy the app, verify real backend permissions using a pilot Sheet, and complete timed human pilots in both conditions. Use the main URL for randomized assignment. Explicit condition URLs and legacy preview URLs both require sign-in and save data; condition-linked assignment is recorded separately. Use local mode or a separate pilot Sheet for grading demonstrations. Do not mix pilot records into the final study Sheet. Keep the dataset, protocol, salt and version unchanged once collection starts.

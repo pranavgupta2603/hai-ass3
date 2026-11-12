@@ -70,25 +70,45 @@ def test_full_workflow_and_resume(monkeypatch, tmp_path, condition):
     assert at.success and not at.radio
 
 
-def test_preview_never_writes_study_store(monkeypatch, tmp_path):
-    db = tmp_path / 'absent.db'
+@pytest.mark.parametrize('parameter', ['condition', 'preview'])
+@pytest.mark.parametrize('condition', ['baseline', 'assisted'])
+def test_condition_links_require_sign_in_and_save_all_responses(monkeypatch, tmp_path, parameter, condition):
+    db = tmp_path / 'condition.db'
     monkeypatch.setenv('ASS3_MODE', 'local')
     monkeypatch.setenv('ASS3_DB', str(db))
     at = AppTest.from_file(str(BASE / 'app.py'))
-    at.query_params['preview'] = 'assisted'
+    at.query_params[parameter] = condition
     at.run()
+    assert len(at.text_input) == 1 and not at.radio
+    assert not SQLiteStore(db).read()
+    login(at, 'linktester')
     pass_attention(at)
-    assert len(at.metric) == 2 and not db.exists()
-    # Changing conditions clears preview state, never real assignments.
-    at.query_params['preview'] = 'baseline'
+    for i in range(5):
+        assert len(at.metric) == (2 if condition == 'assisted' else 0)
+        at.radio[0].set_value('Real')
+        at.radio[1].set_value(4)
+        button(at, 'Submit & Next').click().run()
+        assert not at.exception
+        assert len([e for e in SQLiteStore(db).read('linktester') if e['kind'] == 'response']) == i + 1
+    at.radio(key='effort').set_value(3)
+    button(at, 'Finish study').click().run()
+    assert at.success
+    assert len([e for e in SQLiteStore(db).read('linktester') if e['kind'] == 'questionnaire']) == 1
+    # Opening the other condition must never reset or reassign a signed-in participant.
+    at.query_params[parameter] = 'baseline' if condition == 'assisted' else 'assisted'
     at.run()
-    pass_attention(at)
-    assert not at.metric and not db.exists()
+    assert at.success and not at.text_input
+    saved = next(e for e in SQLiteStore(db).read('linktester') if e['kind'] == 'session')
+    assert saved['payload']['condition'] == condition
 
 
-def test_production_requires_backend(monkeypatch):
+
+@pytest.mark.parametrize('parameter', ['', 'condition', 'preview'])
+def test_production_requires_backend(monkeypatch, parameter):
     monkeypatch.setenv('ASS3_MODE', 'study')
     at = AppTest.from_file(str(BASE / 'app.py'))
+    if parameter:
+        at.query_params[parameter] = 'baseline'
     at.secrets['study'] = {'mode': 'study'}
     at.run()
     assert not at.exception and not at.text_input
