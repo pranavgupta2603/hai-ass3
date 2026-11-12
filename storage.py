@@ -52,14 +52,22 @@ class SheetsStore:
             scopes=['https://www.googleapis.com/auth/spreadsheets'])
         client = gspread.authorize(credentials)
         self.sheet = client.open_by_key(config['spreadsheet_id']).worksheet(config.get('worksheet', 'events'))
-        # Provision the header once using setup_sheet.py; app never races to create it.
-        if self.sheet.row_values(1) != HEADERS:
-            raise ValueError('Unexpected sheet headers. Run setup_sheet.py before deployment.')
+        self._rows()
+
+    def _rows(self):
+        # Clearing pilot responses sometimes clears the header as well. Recreate only
+        # an entirely empty worksheet. Never overwrite a nonempty, unrecognized sheet.
+        with LOCK:
+            rows = self.sheet.get_all_values()
+            if not any(any(cell for cell in row) for row in rows):
+                self.sheet.update(range_name='A1:E1', values=[HEADERS], value_input_option='RAW')
+                return [HEADERS]
+            if rows[0] != HEADERS:
+                raise ValueError('Study sheet headers changed; existing data was not modified.')
+            return rows
 
     def read(self, pid=None):
-        rows = self.sheet.get_all_values()
-        if not rows or rows[0] != HEADERS:
-            raise ValueError('Study sheet headers changed.')
+        rows = self._rows()
         events = []
         for row in rows[1:]:
             if not any(row):

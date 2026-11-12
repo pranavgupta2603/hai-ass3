@@ -104,3 +104,7 @@ See `STUDY_DESIGN.md` for the measurement rationale and assignment mapping.
 ## Configured backend for this installation
 
 The supplied spreadsheet already contained `annotations` and `ass3` tabs. Those were preserved. This installation uses a separate `ass3_events` tab in the same private spreadsheet. A single `__system__` connection-check event verifies write/read access and is excluded from participant exports because it has no study session. Real credentials are in the ignored local `.streamlit/secrets.toml`, with owner-only file permissions.
+
+## Resetting pilot data
+
+Prefer removing only data rows (row 2 onward), keeping the header row in `ass3_events`. If the whole worksheet is cleared, the app now automatically restores the five headers before sign-in or saving. It only does this when the worksheet is completely empty; it refuses to overwrite unrecognized headers above existing data. Clearing rows removes saved sessions and responses; this recovery restores the schema, not deleted participant data.

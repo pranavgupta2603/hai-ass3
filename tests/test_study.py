@@ -50,6 +50,11 @@ class FakeSheet:
     def __init__(self):
         self.rows = [HEADERS]
         self.fail_after_write = False
+        self.header_updates = 0
+    def update(self, *, range_name, values, value_input_option):
+        assert range_name == "A1:E1" and value_input_option == "RAW"
+        self.header_updates += 1
+        self.rows = values + self.rows[1:]
     def get_all_values(self):
         return self.rows
     def append_row(self, row, **kwargs):
@@ -78,3 +83,34 @@ def test_export_excludes_incomplete_from_summary(tmp_path):
     result = export(events + events, tmp_path)
     assert all(v['completed_participants'] == 0 for v in result['conditions'].values())
     assert (tmp_path / 'participants.csv').read_text().count('person') == 1
+
+
+@pytest.mark.parametrize('empty_rows', [[], [[]], [['', '', '', '', '']], [[], [], []]])
+def test_sheets_restores_entirely_empty_sheet_before_sign_in(empty_rows):
+    store = SheetsStore.__new__(SheetsStore)
+    store.sheet = FakeSheet()
+    store.sheet.rows = empty_rows
+    session = event('participant', 'session', {'condition': 'baseline'})
+    assert store.put(session) == session
+    assert store.sheet.rows[0] == HEADERS
+    assert store.sheet.header_updates == 1
+    assert store.read('participant') == [session]
+
+
+def test_sheets_recovers_if_cleared_after_connection():
+    store = SheetsStore.__new__(SheetsStore)
+    store.sheet = FakeSheet()
+    assert store.read() == []
+    store.sheet.rows = [[]]
+    assert store.read() == []
+    assert store.sheet.rows == [HEADERS]
+
+
+def test_sheets_does_not_overwrite_nonempty_sheet_with_bad_headers():
+    store = SheetsStore.__new__(SheetsStore)
+    store.sheet = FakeSheet()
+    store.sheet.rows = [[], ['existing', 'participant', 'data']]
+    with pytest.raises(ValueError, match='existing data was not modified'):
+        store.read()
+    assert store.sheet.header_updates == 0
+    assert store.sheet.rows[1] == ['existing', 'participant', 'data']
