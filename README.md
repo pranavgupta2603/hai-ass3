@@ -1,5 +1,11 @@
 # Assignment 3 — Job Posting Study
 
+Live study: https://gpranav-job-study.streamlit.app/
+
+Reviewer previews: [baseline](https://gpranav-job-study.streamlit.app/?preview=baseline) · [AI-assisted](https://gpranav-job-study.streamlit.app/?preview=assisted). Preview responses are never saved.
+
+Source: https://github.com/pranavgupta2603/hai-ass3 (public, as requested; includes the study dataset and answer labels, but no credentials or participant records).
+
 One Streamlit app implements baseline and AI-assisted conditions for the final Assignment 2 dataset. The deployed study uses a private Google Sheet; SQLite is an explicit local testing option. Reviewer previews never write to either backend.
 
 ## Run locally (Python 3.11+)
